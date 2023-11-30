@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -30,6 +29,7 @@ type Socket struct {
 	headers         http.Header
 	room            *Room
 	server          *socketServer
+	closed 				bool
 }
 
 func (s *Socket) SetData(key string, value interface{}) {
@@ -50,28 +50,20 @@ func (s *Socket) Send(event string, data string) {
 }
 
 func (s *Socket) listenOutgoingMessage() {
-	for {
-		message, ok := <-s.OutgoingMessage
-		if !ok {
-			return
-		}
-
+	for range s.OutgoingMessage {
+		message := <-s.OutgoingMessage
 		err := s.conn.WriteMessage(websocket.TextMessage, []byte(message))
 		if err != nil {
-			fmt.Println("Error while sending message")
-			fmt.Println(err)
+			s.Close()	
 			return
 		}
 	}
 }
 
 func (s *Socket) listenIncomingMessage() {
-
-	for {
-		message, ok := <-s.IncomingMessage
-		if !ok {
-			return
-		}
+	for range s.IncomingMessage {
+				message := <-s.IncomingMessage
+	
 		var socketMessage SocketMessage
 		err := json.Unmarshal([]byte(message), &socketMessage)
 		if err != nil {
@@ -86,10 +78,11 @@ func (s *Socket) listenIncomingMessage() {
 
 
 func (s *Socket) readMessage() {
+	var socketMessage SocketMessage
 	for {
-		var socketMessage SocketMessage
 		err := s.conn.ReadJSON(&socketMessage)
 		if err != nil {
+			s.Close()
 			return
 		}
 		if _, exists := s.events[socketMessage.Event]; exists {
@@ -140,18 +133,13 @@ func (s *Socket) LeaveAll() {
 }
 
 
-
-
 func (s *Socket) Close() {
-	time.AfterFunc(1*time.Millisecond, func() {
-	s.server.RemoveSocket(s)
-	close(s.IncomingMessage)
-	close(s.OutgoingMessage)
-	err := s.conn.Close()
-	if err != nil {
-		panic(err)
+	if s.closed {
+		return
 	}
-	})
+	s.conn.Close()
+	s.server.RemoveSocket(s)
+	s.closed = true
 }
 
 func (s *Socket) On(event string, callback SocketEventCallback) {
@@ -198,6 +186,7 @@ func NewSocket(conn *websocket.Conn, r *http.Request, server *socketServer) *Soc
 		events:          make(map[string]SocketHandler),
 		Payload:         make(map[string]interface{}),
 		headers:         r.Header,
+		closed : 				 false,
 		server:          server,
 	}
 }
