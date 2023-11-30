@@ -24,13 +24,14 @@ type SocketServer interface {
 	GetRoom(roomName string) *Room
 	On(event string, callback SocketEventCallback)
 	OnConnect(callback Callback)
-	OnDisconnect(callback Callback)
+	OnDisconnect(Callback Reason)
 	CountSockets() uint64
 	start()
 	Close()
 }
 
 type Callback func(*Socket)
+type Reason func(string)
 
 func stringify(event string, data string) (string, error) {
 	var socketMessage SocketMessage
@@ -66,7 +67,7 @@ type socketServer struct {
 	events            sync.Map
 	onConnect         Callback
 	onConnectIsSet    bool
-	onDisconnect      Callback
+	onDisconnect      Reason
 	onDisconnectIsSet bool
 }
 
@@ -87,7 +88,7 @@ func (ss *socketServer) start() {
 			ss.socketChannel <- socket
 		case socket := <-ss.leavedSockets:
 			if ss.onDisconnect != nil {
-				ss.onDisconnect(socket)
+				ss.onDisconnect(socket.conn.Close().Error())
 			}
 		case socket := <-ss.socketChannel:
 			go func() {
@@ -131,7 +132,7 @@ func (ss *socketServer) OnConnect(callback Callback) {
 	ss.onConnect = callback
 }
 
-func (ss *socketServer) OnDisconnect(callback Callback) {
+func (ss *socketServer) OnDisconnect(callback Reason) {
 	if ss.onDisconnectIsSet {
 		log.Panic(OnConnectError)
 		return
