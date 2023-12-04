@@ -29,7 +29,6 @@ type Socket struct {
 	headers         http.Header
 	room            *Room
 	server          *socketServer
-	closed 				bool
 }
 
 func (s *Socket) SetData(key string, value interface{}) {
@@ -54,7 +53,6 @@ func (s *Socket) listenOutgoingMessage() {
 		message := <-s.OutgoingMessage
 		err := s.conn.WriteMessage(websocket.TextMessage, []byte(message))
 		if err != nil {
-			s.Close()	
 			return
 		}
 	}
@@ -78,11 +76,11 @@ func (s *Socket) listenIncomingMessage() {
 
 
 func (s *Socket) readMessage() {
+	defer s.Close()
 	var socketMessage SocketMessage
 	for {
 		err := s.conn.ReadJSON(&socketMessage)
 		if err != nil {
-			s.Close()
 			return
 		}
 		if _, exists := s.events[socketMessage.Event]; exists {
@@ -134,12 +132,8 @@ func (s *Socket) LeaveAll() {
 
 
 func (s *Socket) Close() {
-	if s.closed {
-		return
-	}
 	s.conn.Close()
 	s.server.RemoveSocket(s)
-	s.closed = true
 }
 
 func (s *Socket) On(event string, callback SocketEventCallback) {
@@ -186,7 +180,6 @@ func NewSocket(conn *websocket.Conn, r *http.Request, server *socketServer) *Soc
 		events:          make(map[string]SocketHandler),
 		Payload:         make(map[string]interface{}),
 		headers:         r.Header,
-		closed : 				 false,
 		server:          server,
 	}
 }
